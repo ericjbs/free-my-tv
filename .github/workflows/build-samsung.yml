@@ -74,13 +74,14 @@ jobs:
           python3 tizen/build.py
           mkdir out-signed
           cat > sign.exp <<'EOT'
-          set timeout 60
+          set timeout 90
           spawn $env(T) package -t wgt -s fmtv -o out-signed -- FreeMyTV-tizen.wgt
           expect {
-            -nocase -re {distributor[^\n]*password[^\n]*: *$} { send "tizenpkcs12passfordsigner\r"; exp_continue }
-            -nocase -re {password[^\n]*: *$} { send "$env(PW)\r"; exp_continue }
-            -nocase -re {\(y/n\)|\[y/n\]} { send "y\r"; exp_continue }
-            timeout { puts "\nTIMEOUT. Pending output: $expect_out(buffer)"; exit 1 }
+            -nocase -re {no: *\(n\) *\? *$} { send "y\r"; exp_continue -continue_timer }
+            -nocase -re {distributor[^\n]*password[^\n]*: *$} { send "tizenpkcs12passfordsigner\r"; exp_continue -continue_timer }
+            -nocase -re {password[^\n]*: *$} { send "$env(PW)\r"; exp_continue -continue_timer }
+            -nocase -re {\(y/n\)|\[y/n\]} { send "y\r"; exp_continue -continue_timer }
+            timeout { puts "\nTIMEOUT"; exit 1 }
             eof
           }
           catch wait result
