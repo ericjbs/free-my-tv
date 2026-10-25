@@ -52,11 +52,37 @@ jobs:
         env:
           PW: ${{ secrets.CERT_PASSWORD }}
         run: |
-          T="$HOME/tizen-studio/tools/ide/bin/tizen"
+          sudo apt-get install -y expect > /dev/null
+          S="$HOME/tizen-studio"
+          D="$HOME/tizen-studio-data"
+          export T="$S/tools/ide/bin/tizen"
           "$T" certificate -a fmtv -p "$PW" -c BR -s SP -ct "Sao Paulo" -o FreeMyTV -n FreeMyTV -e fmtv@example.com -f fmtv
-          "$T" cli-config "profiles.path=$HOME/tizen-studio-data/profile/profiles.xml"
-          "$T" security-profiles add -n fmtv -a "$HOME/tizen-studio-data/keystore/author/fmtv.p12" -p "$PW"
-          TIZEN_STUDIO="$HOME/tizen-studio" python3 tizen/build.py --sign fmtv
+          "$T" cli-config "profiles.path=$D/profile/profiles.xml"
+          "$T" security-profiles add -n fmtv -a "$D/keystore/author/fmtv.p12" -p "$PW"
+          python3 - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          p = os.path.expanduser('~/tizen-studio-data/profile/profiles.xml')
+          t = ET.parse(p)
+          for i in t.iter('profileitem'):
+              d = i.get('distributor')
+              if d == '0':
+                  i.set('password', os.environ['PW'])
+              elif d == '1':
+                  i.set('password', 'tizenpkcs12passfordsigner')
+          t.write(p, encoding='UTF-8', xml_declaration=True)
+          PY
+          python3 tizen/build.py
+          mkdir out-signed
+          cat > sign.exp <<'EOT'
+          set timeout -1
+          spawn $env(T) package -t wgt -s fmtv -o out-signed -- FreeMyTV-tizen.wgt
+          expect eof
+          catch wait result
+          exit [lindex $result 3]
+          EOT
+          expect sign.exp || { cat "$D/cli/logs/cli.log" || true; exit 1; }
+          cp out-signed/*.wgt FreeMyTV-tizen.wgt
+          unzip -l FreeMyTV-tizen.wgt | grep -i signature
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
