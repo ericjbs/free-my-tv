@@ -1,0 +1,65 @@
+name: Build Samsung
+on:
+  workflow_dispatch:
+    inputs:
+      city:
+        description: Cidade (nome no card do clima)
+        default: São Paulo
+      latitude:
+        description: Latitude
+        default: "-23.55"
+      longitude:
+        description: Longitude
+        default: "-46.63"
+      region:
+        description: País (2 letras)
+        default: BR
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Instalar Tizen CLI
+        run: |
+          curl -fL -o tizen-installer "https://download.tizen.org/sdk/Installer/tizen-studio_5.6/web-cli_Tizen_Studio_5.6_ubuntu-64.bin"
+          chmod +x tizen-installer
+          ./tizen-installer --accept-license "$HOME/tizen-studio"
+      - name: Configuração
+        env:
+          TMDB_KEY: ${{ secrets.TMDB_KEY }}
+          CITY: ${{ inputs.city }}
+          LAT: ${{ inputs.latitude }}
+          LON: ${{ inputs.longitude }}
+          REGION: ${{ inputs.region }}
+        run: |
+          cat > config.properties <<EOT
+          tmdb_key=$TMDB_KEY
+          tmdb_region=$REGION
+          latitude=$LAT
+          longitude=$LON
+          city=$CITY
+          language=pt
+          show_crypto=false
+          temperature=C
+          EOT
+      - name: Certificado e assinatura
+        env:
+          PW: ${{ secrets.CERT_PASSWORD }}
+        run: |
+          T="$HOME/tizen-studio/tools/ide/bin/tizen"
+          "$T" certificate -a fmtv -p "$PW" -c BR -s SP -ct Sao-Paulo -o FreeMyTV -n FreeMyTV -e fmtv@example.com -f fmtv
+          "$T" cli-config "profiles.path=$HOME/tizen-studio-data/profile/profiles.xml"
+          "$T" security-profiles add -n fmtv -a "$HOME/tizen-studio-data/keystore/author/fmtv.p12" -p "$PW"
+          TIZEN_STUDIO="$HOME/tizen-studio" python3 tizen/build.py --sign fmtv
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Build ${{ github.run_number }}
+          files: FreeMyTV-tizen.wgt
+          make_latest: true
